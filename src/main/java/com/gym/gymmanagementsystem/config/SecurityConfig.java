@@ -1,9 +1,9 @@
 package com.gym.gymmanagementsystem.config;
 
 import com.gym.gymmanagementsystem.service.UserDetailsServiceImpl;
-import com.gym.gymmanagementsystem.service.AuthService; // Make sure this is imported if used directly for a bean
+import com.gym.gymmanagementsystem.service.AuthService;
 
-import org.springframework.beans.factory.annotation.Autowired; // Keep this
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.authentication.AuthenticationManager;
@@ -18,11 +18,12 @@ import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
-import org.springframework.web.cors.CorsConfiguration;
-import org.springframework.web.cors.CorsConfigurationSource;
-import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
+import org.springframework.web.cors.CorsConfiguration; // Ensure this is imported
+import org.springframework.web.cors.CorsConfigurationSource; // Ensure this is imported
+import org.springframework.web.cors.UrlBasedCorsConfigurationSource; // Ensure this is imported
 
 import java.util.Arrays;
+import java.util.List; // NEW IMPORT: For List.of()
 
 import static org.springframework.security.config.Customizer.withDefaults;
 
@@ -30,9 +31,7 @@ import static org.springframework.security.config.Customizer.withDefaults;
 @EnableWebSecurity
 public class SecurityConfig {
 
-    // Remove the direct @Autowired for JwtAuthFilter
-
-    @Autowired // Keep this, as it's a direct dependency of SecurityConfig itself.
+    @Autowired
     private UserDetailsServiceImpl userDetailsService;
 
     @Bean
@@ -40,7 +39,6 @@ public class SecurityConfig {
         return new BCryptPasswordEncoder();
     }
 
-    // Define JwtAuthFilter as a bean, Spring will inject AuthService and UserDetailsService into its constructor
     @Bean
     public JwtAuthFilter jwtAuthFilter(AuthService authService, UserDetailsServiceImpl userDetailsService) {
         return new JwtAuthFilter(authService, userDetailsService);
@@ -59,22 +57,24 @@ public class SecurityConfig {
         return config.getAuthenticationManager();
     }
 
-    // Pass JwtAuthFilter as a parameter to securityFilterChain, Spring will inject the bean
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http, JwtAuthFilter jwtAuthFilter) throws Exception {
         http
             .csrf(AbstractHttpConfigurer::disable)
-            .cors(withDefaults())
+            // MODIFIED CORS: Explicitly apply CorsConfigurationSource before authz
+            .cors(cors -> cors.configurationSource(corsConfigurationSource())) // Use the bean directly
             .authorizeHttpRequests(authorize -> authorize
+                // Allow OPTIONS requests for CORS preflight (Crucial for 403 on OPTIONS fix)
+                .requestMatchers(org.springframework.http.HttpMethod.OPTIONS, "/**").permitAll()
                 .requestMatchers("/api/auth/login", "/api/auth/register-admin").permitAll()
-                .requestMatchers("/api/**").authenticated() // All /api/** requests must be authenticated
-                .anyRequest().permitAll() // Allow anything else not matching /api/**
+                .requestMatchers("/api/**").authenticated()
+                .anyRequest().permitAll()
             )
             .sessionManagement(session -> session
                 .sessionCreationPolicy(SessionCreationPolicy.STATELESS)
             )
             .authenticationProvider(authenticationProvider())
-            .addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter.class); // Use the injected filter
+            .addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter.class);
 
         return http.build();
     }
@@ -82,10 +82,19 @@ public class SecurityConfig {
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration configuration = new CorsConfiguration();
-        configuration.setAllowedOrigins(Arrays.asList("http://localhost:5173", "http://127.0.0.1:5173"));
+        // IMPORTANT: Update allowed origins to include your Netlify deployed URL!
+        // Add your Netlify URL here (e.g., https://srfitness-admin-[random-string].netlify.app)
+        // You can also include localhost for local development
+        configuration.setAllowedOrigins(List.of(
+            "http://localhost:5173",
+            "http://127.0.0.1:5173",
+            "https://srfitness-admin.netlify.app" // REPLACE WITH YOUR ACTUAL NETLIFY URL
+        ));
         configuration.setAllowedMethods(Arrays.asList("GET", "POST", "PUT", "DELETE", "OPTIONS"));
         configuration.setAllowedHeaders(Arrays.asList("Authorization", "Content-Type", "X-Requested-With", "Accept"));
         configuration.setAllowCredentials(true);
+        configuration.setMaxAge(3600L); // How long the preflight request can be cached
+
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
         source.registerCorsConfiguration("/**", configuration);
         return source;
