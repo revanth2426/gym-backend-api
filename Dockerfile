@@ -1,33 +1,31 @@
-# Use a base image with a Java Development Kit (JDK) installed.
-# eclipse-temurin provides OpenJDK builds. Use Java 17, which matches your project.
-FROM eclipse-temurin:17-jdk-alpine
+# Stage 1: Build the application
+FROM eclipse-temurin:17-jdk-alpine as builder
 
-# Set the working directory inside the container
+# Set the working directory
 WORKDIR /app
 
-# Copy the Maven project files.
-# The `pom.xml` first to allow Docker to cache dependencies more effectively.
+# Copy Maven pom.xml and source code
 COPY pom.xml .
 COPY src ./src
 
-# Build the Spring Boot application (this step will run inside the container during Docker build)
-# `-Dmaven.test.skip=true` skips tests as they are usually not needed in the final image.
-# `-Dspring-boot.repackage.skip=true` prevents Spring Boot from creating the executable JAR
-# in the traditional way, as we'll build it in two stages for better caching.
+# Build the JAR file
+# -Dmaven.test.skip=true skips tests
+# -Dspring-boot.build-info.skip=true can be added to skip build info generation if not needed
 RUN mvn clean package -Dmaven.test.skip=true
 
-# The `target` directory now contains your built JAR.
-# The default JAR name is usually artifactId-version.jar
-# Example: gym-management-system-0.0.1-SNAPSHOT.jar
+# Stage 2: Create the final image
+# Use a smaller base image for the final application, only containing JRE (Java Runtime Environment)
+FROM eclipse-temurin:17-jre-alpine
+
+# Set the working directory
+WORKDIR /app
+
+# Copy the JAR file from the builder stage
 # Replace 'gym-management-system-0.0.1-SNAPSHOT.jar' with your actual JAR filename!
-ARG JAR_FILE=target/gym-management-system-0.0.1-SNAPSHOT.jar
+COPY --from=builder /app/target/gym-management-system-0.0.1-SNAPSHOT.jar app.jar
 
-# Copy the built JAR file into the container
-COPY ${JAR_FILE} app.jar
-
-# Expose the port your Spring Boot application runs on (default is 8080 or 8088 as configured)
-# Ensure this matches your server.port in application.properties (which is 8088)
+# Expose the port your Spring Boot app runs on (matches server.port in application.properties)
 EXPOSE 8088
 
-# Command to run the application when the container starts
+# Command to run the application
 ENTRYPOINT ["java","-jar","app.jar"]
